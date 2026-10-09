@@ -69,6 +69,7 @@
 
         input {
             width: 100%;
+            min-width: 0;
             padding: 12px;
             border: 1px solid #cbd5e1;
             border-radius: 7px;
@@ -85,7 +86,40 @@
         .ayuda {
             font-size: 12px;
             color: #64748b;
-            line-height: 1.4;
+            line-height: 1.5;
+        }
+
+        .periodo {
+            margin-top: 20px;
+            padding: 18px;
+            background: #f3f8fd;
+            border: 1px solid #d6e6f5;
+            border-radius: 9px;
+        }
+
+        .periodo h3 {
+            margin: 0 0 8px;
+            color: #1261a0;
+            font-size: 16px;
+        }
+
+        .fechas {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .resultado-fechas {
+            margin-top: 14px;
+            padding: 12px;
+            background: white;
+            border-radius: 7px;
+            line-height: 1.6;
+        }
+
+        .resultado-fechas strong {
+            color: #1261a0;
         }
 
         .personas {
@@ -145,10 +179,7 @@
         }
 
         .resumen {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 15px;
-            margin-bottom: 20px;
+            margin: 18px 0;
         }
 
         .tarjeta {
@@ -194,6 +225,7 @@
 
         td:last-child, th:last-child {
             text-align: right;
+            white-space: nowrap;
         }
 
         tfoot {
@@ -247,7 +279,7 @@
         @media (max-width: 420px) {
             .formulario-principal,
             .personas,
-            .resumen {
+            .fechas {
                 grid-template-columns: 1fr;
             }
         }
@@ -289,13 +321,15 @@
         <div class="campo">
             <label for="valorRecibo">Valor recibo ($)</label>
             <input
-                type="number"
+                type="text"
                 id="valorRecibo"
-                min="1"
-                step="1"
-                placeholder="Ej. 77400"
+                inputmode="numeric"
+                autocomplete="off"
+                placeholder="Ej. 77.400"
             >
-            <span class="ayuda">Valor total de la factura.</span>
+            <span class="ayuda">
+                El valor se formatea automáticamente con puntos de miles.
+            </span>
         </div>
 
         <div class="campo">
@@ -307,7 +341,9 @@
                 step="1"
                 placeholder="Ej. 60"
             >
-            <span class="ayuda">Duración del periodo facturado.</span>
+            <span class="ayuda">
+                Este valor se utiliza para validar los días individuales.
+            </span>
         </div>
 
         <div class="campo">
@@ -320,16 +356,51 @@
                 step="1"
                 placeholder="Ej. 6"
             >
-            <span class="ayuda">Cantidad de personas que compartirán el recibo.</span>
+            <span class="ayuda">
+                Cantidad de personas que compartirán el recibo.
+            </span>
         </div>
 
+    </div>
+
+    <div class="periodo">
+        <h3>Periodo facturado</h3>
+
+        <div class="ayuda">
+            Selecciona las fechas si deseas conocer la cantidad de días
+            del periodo. Este dato es opcional y sirve como referencia.
+        </div>
+
+        <div class="fechas">
+
+            <div class="campo">
+                <label for="fechaInicio">Desde (AAAA-MM-DD)</label>
+                <input type="date" id="fechaInicio">
+            </div>
+
+            <div class="campo">
+                <label for="fechaFin">Hasta (AAAA-MM-DD)</label>
+                <input type="date" id="fechaFin">
+            </div>
+
+        </div>
+
+        <div
+            id="resultadoFechas"
+            class="resultado-fechas ayuda"
+            aria-live="polite"
+        >
+            Selecciona una fecha inicial y una final para conocer
+            los días del periodo. No es obligatorio.
+        </div>
     </div>
 
     <h2>2. Días que paga cada persona</h2>
 
     <p class="ayuda">
-        Ingresa los días correspondientes a cada persona.
-        Si alguien paga todo el periodo, escribe el total de días facturados.
+        Los días de cada persona se completan inicialmente con los
+        días facturados. Puedes modificar cada casilla según corresponda.
+        La suma de los pagos siempre será igual al valor del recibo.
     </p>
 
     <div id="personas" class="personas"></div>
@@ -341,17 +412,13 @@
     </button>
 
     <section id="resultados" class="oculto" aria-live="polite">
+
         <h2>3. Resultado de la distribución</h2>
 
         <div class="resumen">
             <div class="tarjeta">
                 <span>Valor total del recibo</span>
                 <strong id="totalRecibo"></strong>
-            </div>
-
-            <div class="tarjeta">
-                <span>Total distribuido entre las personas</span>
-                <strong id="totalDistribuido"></strong>
             </div>
         </div>
 
@@ -386,6 +453,7 @@
         >
             Imprimir resultados
         </button>
+
     </section>
 
     <footer>
@@ -401,30 +469,117 @@
     const contenedorPersonas = document.getElementById("personas");
     const mensajeError = document.getElementById("mensajeError");
     const resultados = document.getElementById("resultados");
+    const fechaInicio = document.getElementById("fechaInicio");
+    const fechaFin = document.getElementById("fechaFin");
+    const resultadoFechas = document.getElementById("resultadoFechas");
 
-    // Formato de moneda colombiana
     const moneda = new Intl.NumberFormat("es-CO", {
         style: "currency",
         currency: "COP",
         maximumFractionDigits: 0
     });
 
+    const miles = new Intl.NumberFormat("es-CO", {
+        maximumFractionDigits: 0,
+        useGrouping: true
+    });
+
     function formatear(valor) {
         return moneda.format(valor);
     }
 
-    // Crear las casillas dinámicamente según el número de personas
+    // Permite escribir 77400 y visualizarlo como 77.400.
+    function obtenerValorRecibo() {
+        const digitos = valorRecibo.value.replace(/\D/g, "");
+        return digitos === "" ? NaN : Number(digitos);
+    }
+
+    valorRecibo.addEventListener("input", function () {
+        const digitos = this.value.replace(/\D/g, "");
+
+        this.value = digitos === ""
+            ? ""
+            : miles.format(Number(digitos));
+
+        resultados.classList.add("oculto");
+        ocultarError();
+    });
+
+    // Devuelve los días inclusivos entre dos fechas.
+    // Se usan fechas UTC para evitar problemas con cambios horarios.
+    function contarDiasInclusivos(inicio, fin) {
+        const partesInicio = inicio.split("-").map(Number);
+        const partesFin = fin.split("-").map(Number);
+
+        const utcInicio = Date.UTC(
+            partesInicio[0],
+            partesInicio[1] - 1,
+            partesInicio[2]
+        );
+
+        const utcFin = Date.UTC(
+            partesFin[0],
+            partesFin[1] - 1,
+            partesFin[2]
+        );
+
+        return Math.round(
+            (utcFin - utcInicio) / 86400000
+        ) + 1;
+    }
+
+    function actualizarPeriodo() {
+        const inicio = fechaInicio.value;
+        const fin = fechaFin.value;
+
+        resultados.classList.add("oculto");
+        ocultarError();
+
+        if (!inicio || !fin) {
+            resultadoFechas.textContent =
+                "Selecciona ambas fechas para conocer los días del periodo. " +
+                "Es opcional y no se utiliza directamente en el cálculo.";
+            return;
+        }
+
+        if (fin < inicio) {
+            resultadoFechas.textContent =
+                "La fecha final debe ser igual o posterior a la fecha inicial.";
+            return;
+        }
+
+        const cantidadDias = contarDiasInclusivos(inicio, fin);
+
+        resultadoFechas.textContent =
+            "Periodo seleccionado: " + inicio + " hasta " + fin +
+            ". Total: " + cantidadDias +
+            (cantidadDias === 1 ? " día." : " días.") +
+            " Se cuentan el día inicial y el día final.";
+
+        // La fecha sirve de ayuda para completar los campos.
+        // Después, los días facturados y los días individuales
+        // pueden editarse sin depender de las fechas.
+        diasFacturados.value = cantidadDias;
+
+        const campos = contenedorPersonas.querySelectorAll("input");
+
+        campos.forEach(function (campo) {
+            campo.value = cantidadDias;
+        });
+    }
+
+    fechaInicio.addEventListener("change", actualizarPeriodo);
+    fechaFin.addEventListener("change", actualizarPeriodo);
+
     function crearPersonas() {
         const cantidad = Number(numeroPersonas.value);
-
-        // Conservar los días que ya se habían digitado
         const anteriores = {};
 
-        contenedorPersonas
-            .querySelectorAll("input")
-            .forEach((campo) => {
+        contenedorPersonas.querySelectorAll("input").forEach(
+            function (campo) {
                 anteriores[campo.dataset.persona] = campo.value;
-            });
+            }
+        );
 
         contenedorPersonas.innerHTML = "";
         resultados.classList.add("oculto");
@@ -459,10 +614,16 @@
                 "Días que paga la persona " + i
             );
 
-            // Recuperar el valor anterior cuando sea posible
             if (anteriores[i] !== undefined) {
                 campo.value = anteriores[i];
+            } else if (diasFacturados.value !== "") {
+                campo.value = diasFacturados.value;
             }
+
+            campo.addEventListener("input", function () {
+                resultados.classList.add("oculto");
+                ocultarError();
+            });
 
             tarjeta.appendChild(etiqueta);
             tarjeta.appendChild(campo);
@@ -471,6 +632,11 @@
     }
 
     numeroPersonas.addEventListener("input", crearPersonas);
+
+    diasFacturados.addEventListener("input", function () {
+        resultados.classList.add("oculto");
+        ocultarError();
+    });
 
     function mostrarError(mensaje) {
         mensajeError.textContent = mensaje;
@@ -483,10 +649,12 @@
         mensajeError.classList.add("oculto");
     }
 
-    // Distribuir los pesos sobrantes para que el total
-    // de los valores redondeados coincida con el recibo.
+    // Redondea los pagos al peso y distribuye los pesos restantes
+    // para garantizar que la suma coincida con la factura.
     function distribuirPesos(valorTotal, dias) {
-        const sumaDias = dias.reduce((suma, dia) => suma + dia, 0);
+        const sumaDias = dias.reduce(
+            (suma, dia) => suma + dia, 0
+        );
 
         const exactos = dias.map(
             dia => valorTotal * dia / sumaDias
@@ -496,8 +664,11 @@
             valor => Math.floor(valor)
         );
 
-        let sobrantes = valorTotal -
-            valores.reduce((suma, valor) => suma + valor, 0);
+        const sumaRedondeada = valores.reduce(
+            (suma, valor) => suma + valor, 0
+        );
+
+        const sobrantes = valorTotal - sumaRedondeada;
 
         const orden = exactos
             .map((valor, indice) => ({
@@ -516,7 +687,7 @@
     function calcular() {
         ocultarError();
 
-        const valor = Number(valorRecibo.value);
+        const valor = obtenerValorRecibo();
         const dias = Number(diasFacturados.value);
         const cantidad = Number(numeroPersonas.value);
 
@@ -526,7 +697,7 @@
             valor < 1
         ) {
             mostrarError(
-                "Ingresa un valor de recibo válido, en pesos enteros."
+                "Ingresa un valor de recibo válido en pesos colombianos."
             );
             return;
         }
@@ -582,6 +753,7 @@
                     ". Deben ser un número entero entre 0 y " +
                     dias + " días."
                 );
+
                 campo.focus();
                 return;
             }
@@ -600,10 +772,9 @@
             return;
         }
 
-        // Cada persona paga en proporción a sus días
         const pagos = distribuirPesos(valor, diasPersonas);
-
         const cuerpoTabla = document.getElementById("cuerpoTabla");
+
         cuerpoTabla.innerHTML = "";
 
         for (let i = 0; i < cantidad; i++) {
@@ -632,9 +803,6 @@
         document.getElementById("totalRecibo").textContent =
             formatear(valor);
 
-        document.getElementById("totalDistribuido").textContent =
-            formatear(totalPagado);
-
         document.getElementById("totalDiasPersona").textContent =
             sumaDias + " días-persona";
 
@@ -642,15 +810,15 @@
             formatear(totalPagado);
 
         document.getElementById("explicacion").textContent =
-            "Cálculo: el recibo de " + formatear(valor) +
-            " se divide proporcionalmente entre " + cantidad +
-            " personas, según sus días declarados. La suma de los días " +
-            "de las personas es " + sumaDias +
-            " días-persona. Cada pago corresponde a los días de esa " +
-            "persona divididos entre el total de días-persona, " +
-            "multiplicado por el valor del recibo. Los valores se " +
-            "redondean al peso colombiano y los pesos sobrantes se " +
-            "distribuyen para que el total coincida exactamente con la factura.";
+            "El recibo de " + formatear(valor) +
+            " se distribuyó proporcionalmente entre " + cantidad +
+            " personas, de acuerdo con los días asignados a cada una. " +
+            "La suma de los días individuales es " + sumaDias +
+            " días-persona. Las fechas del periodo son opcionales y " +
+            "no intervienen directamente en la operación. " +
+            "Los pagos se redondean al peso colombiano y los pesos " +
+            "sobrantes se distribuyen para que el total coincida " +
+            "exactamente con el valor del recibo.";
 
         resultados.classList.remove("oculto");
 
